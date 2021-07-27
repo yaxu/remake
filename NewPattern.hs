@@ -170,7 +170,7 @@ instance Monad Pattern where
   (>>=) = bindBoth
 
 bindInner :: Pattern a -> (a -> Pattern b) -> Pattern b
-bindInner = bindWhole (flip const)
+bindInner = bindWhole const
 
 bindOuter :: Pattern a -> (a -> Pattern b) -> Pattern b
 bindOuter = bindWhole (flip const)
