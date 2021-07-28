@@ -13,6 +13,9 @@ import Control.Applicative (liftA2)
 
 import Prelude hiding ((<*), (*>))
 
+-- ************************************************************ --
+-- Core definition of a Pattern
+
 -- | Timespan (called an arc in 'real' tidal)
 data Span = Span {begin :: Rational, end :: Rational}
   deriving (Show)
@@ -32,6 +35,8 @@ data Pattern a = Pattern {query :: Span -> [Event a]}
 instance Show a => Show (Pattern a) where
   show pat = show $ query pat (Span 0 1)
 
+-- ************************************************************ --
+
 -- | A control pattern as a map from strings to values
 type ControlPattern = Pattern (Map.Map String Value)
 
@@ -41,33 +46,67 @@ data Value = S String
            | R Rational
        deriving (Show)
 
--- | A continuous pattern as a function from time to values. Takes the
--- midpoint of the given query as the time value.
-signal :: (Rational -> a) -> Pattern a
-signal timeF = Pattern {query = f}
-  where f (Span b e) = [Event {whole = Nothing,
-                               active = (Span b e),
-                               value = timeF $ b+((e - b)/2)
-                              }
-                       ]
 
--- | Converts from a range from 0 to 1, to a range from -1 to 1
-toPolar :: Num a => Pattern a -> Pattern a
-toPolar pat = fmap (\v -> (v*2)-1) pat
+-- ************************************************************ --
 
--- | Sawtooth signal
-saw :: Pattern Rational
-saw = signal (\t -> mod' t 1)
+instance Applicative Pattern where
+  pure = steady
+  (<*>) = app (liftA2 sect)
 
-saw2 :: Pattern Rational
-saw2 = toPolar saw
+-- | Apply a pattern of values to a pattern of functions, given a
+-- function to merge the 'whole' timespans
+app :: (Maybe Span -> Maybe Span -> Maybe Span) -> Pattern (a -> b) -> Pattern a -> Pattern b
+app wf patf patv = Pattern f
+    where f s = concatMap (\ef -> catMaybes $ map (apply ef) evs) efs
+            where efs = (query patf s)
+                  evs = (query patv s)
+                  apply ef ev = apply' ef ev (maybeSect (active ef) (active ev))
+                  apply' ef ev Nothing = Nothing
+                  apply' ef ev (Just s') = Just $ Event (wf (whole ef) (whole ev)) s' (value ef $ value ev)
 
--- | A continuous value
-steady :: a -> Pattern a
-steady v = signal (const v)
+-- | Alternative definition of <*>, which takes the wholes from the
+-- pattern of functions (unrelated to the <* in Prelude)
+(<*) :: Pattern (a -> b) -> Pattern a -> Pattern b
+(<*) = app const
 
-silence :: Pattern a
-silence = Pattern (\_ -> [])
+-- | Alternative definition of <*>, which takes the wholes from the
+-- pattern of values (unrelated to the *> in Prelude)
+(*>) :: Pattern (a -> b) -> Pattern a -> Pattern b
+(*>) = app (flip const)
+
+-- ************************************************************ --
+
+instance Monad Pattern where
+  (>>=) = bind
+
+bind :: Pattern a -> (a -> Pattern b) -> Pattern b
+bind = bindWhole (liftA2 sect)
+
+bindInner :: Pattern a -> (a -> Pattern b) -> Pattern b
+bindInner = bindWhole const
+
+bindOuter :: Pattern a -> (a -> Pattern b) -> Pattern b
+bindOuter = bindWhole (flip const)
+
+bindWhole :: (Maybe Span -> Maybe Span -> Maybe Span) -> Pattern a -> (a -> Pattern b) -> Pattern b
+bindWhole chooseWhole pv f = Pattern $ \s -> concatMap (match s) $ query pv s
+  where match s e = map (withWhole e) $ query (f $ value e) (active e)
+        withWhole e e' = e' {whole = chooseWhole (whole e) (whole e')}
+
+-- ************************************************************ --
+-- Time utilities
+
+-- | Intersection of two timespans
+sect :: Span -> Span -> Span
+sect (Span b e) (Span b' e') = Span (max b b') (min e e')
+
+-- | Intersection of two timespans, returns Nothing if they don't intersect
+maybeSect :: Span -> Span -> Maybe Span
+maybeSect a b = check $ sect a b
+  where check :: Span -> Maybe Span
+        check (Span a b) | b <= a = Nothing
+                         | otherwise = Just (Span a b)
+
 
 -- | The start of the cycle that a given time value is in
 sam :: Rational -> Rational
@@ -84,21 +123,6 @@ spanCycles (Span b e) | e <= b = []
                       | otherwise
   = (Span b (nextSam b)):(spanCycles (Span (nextSam b) e))
 
--- | Repeat discrete value once per cycle
-atom :: a -> Pattern a
-atom v = Pattern f
-  where f s = map (\s' -> Event (Just $ wholeCycle $ begin s') s' v) (spanCycles s)
-        wholeCycle :: Rational -> Span
-        wholeCycle t = Span (sam t) (nextSam t)
-
--- | Concatenate a list of patterns (works a little differently from
--- 'real' tidal, needs some work)
-slowcat :: [Pattern a] -> Pattern a
-slowcat pats = Pattern f
-  where f s = concatMap queryCycle $ spanCycles s
-        queryCycle s = query (pats !! (mod (floor $ begin s) n)) s
-        n = length pats
-
 withEventTime :: (Rational -> Rational) -> Pattern a -> Pattern a
 withEventTime timef pat = Pattern f
   where f s = map (\e -> e {active = withSpanTime timef $ active e,
@@ -111,6 +135,69 @@ withQueryTime timef pat = Pattern f
 
 withSpanTime :: (Rational -> Rational) -> Span -> Span
 withSpanTime timef (Span b e) = Span (timef b) (timef e)
+
+
+-- ************************************************************ --
+-- Fundamental patterns
+
+silence :: Pattern a
+silence = Pattern (\_ -> [])
+
+-- | Repeat discrete value once per cycle
+atom :: a -> Pattern a
+atom v = Pattern f
+  where f s = map (\s' -> Event (Just $ wholeCycle $ begin s') s' v) (spanCycles s)
+        wholeCycle :: Rational -> Span
+        wholeCycle t = Span (sam t) (nextSam t)
+
+-- | A continuous value
+steady :: a -> Pattern a
+steady v = signal (const v)
+
+-- ************************************************************ --
+-- Signals
+
+-- | A continuous pattern as a function from time to values. Takes the
+-- midpoint of the given query as the time value.
+signal :: (Rational -> a) -> Pattern a
+signal timeF = Pattern {query = f}
+  where f (Span b e) = [Event {whole = Nothing,
+                               active = (Span b e),
+                               value = timeF $ b+((e - b)/2)
+                              }
+                       ]
+
+-- | Converts from a range from 0 to 1, to a range from -1 to 1
+toBipolar :: Fractional a => Pattern a -> Pattern a
+toBipolar pat = fmap (\v -> (v*2)-1) pat
+
+-- | Converts from a range from -1 to 1, to a range from 0 to 1
+fromBipolar :: Fractional a => Pattern a -> Pattern a
+fromBipolar pat = fmap (\v -> (v+1)/2) pat
+
+-- | Sawtooth signal
+saw :: Pattern Rational
+saw = signal $ \t -> mod' t 1
+
+saw2 :: Pattern Rational
+saw2 = toBipolar saw
+
+sine :: Fractional a => Pattern a
+sine = fromBipolar sine2
+
+sine2 :: Fractional a => Pattern a
+sine2 = signal $ \t -> realToFrac $ sin ((pi :: Double) * 2 * fromRational t)
+
+-- ************************************************************ --
+-- Pattern manipulations
+
+-- | Concatenate a list of patterns (works a little differently from
+-- 'real' tidal, needs some work)
+slowcat :: [Pattern a] -> Pattern a
+slowcat pats = Pattern f
+  where f s = concatMap queryCycle $ spanCycles s
+        queryCycle s = query (pats !! (mod (floor $ begin s) n)) s
+        n = length pats
 
 fast :: Rational -> Pattern a -> Pattern a
 fast t pat = withEventTime (/t) $ withQueryTime (*t) $ pat
@@ -130,64 +217,7 @@ slowappend a b = slowcat [a,b]
 stack :: [Pattern a] -> Pattern a
 stack pats = Pattern $ \s -> concatMap (\pat -> query pat s) pats
 
--- | Intersection of two timespans, returns Nothing if they don't intersect
-sect :: Span -> Span -> Maybe Span
-sect a b = check $ sect' a b
-  where check :: Span -> Maybe Span
-        check (Span a b) | b <= a = Nothing
-                         | otherwise = Just (Span a b)
-
--- | Intersection of two timespans
-sect' :: Span -> Span -> Span
-sect' (Span b e) (Span b' e') = Span (max b b') (min e e')
-
--- | Apply a pattern of values to a pattern of functions, given a
--- function to merge the 'whole' timespans
-app :: (Maybe Span -> Maybe Span -> Maybe Span) -> Pattern (a -> b) -> Pattern a -> Pattern b
-app wf patf patv = Pattern f
-    where f s = concatMap (\ef -> catMaybes $ map (apply ef) evs) efs
-            where efs = (query patf s)
-                  evs = (query patv s)
-                  apply ef ev = apply' ef ev (sect (active ef) (active ev))
-                  apply' ef ev Nothing = Nothing
-                  apply' ef ev (Just s') = Just $ Event (wf (whole ef) (whole ev)) s' (value ef $ value ev)
-
-instance Applicative Pattern where
-  pure = steady
-  (<*>) = app (liftA2 sect')
-
--- | Alternative definition of <*>, which takes the wholes from the
--- pattern of functions (unrelated to the <* in Prelude)
-(<*) :: Pattern (a -> b) -> Pattern a -> Pattern b
-(<*) = app const
-
--- | Alternative definition of <*>, which takes the wholes from the
--- pattern of values (unrelated to the *> in Prelude)
-(*>) :: Pattern (a -> b) -> Pattern a -> Pattern b
-(*>) = app (flip const)
-
-instance Monad Pattern where
-  (>>=) = bindBoth
-
-bindInner :: Pattern a -> (a -> Pattern b) -> Pattern b
-bindInner = bindWhole const
-
-bindOuter :: Pattern a -> (a -> Pattern b) -> Pattern b
-bindOuter = bindWhole (flip const)
-
-bindBoth :: Pattern a -> (a -> Pattern b) -> Pattern b
-bindBoth = bindWhole (liftA2 sect')
-
-bindWhole :: (Maybe Span -> Maybe Span -> Maybe Span) -> Pattern a -> (a -> Pattern b) -> Pattern b
-bindWhole chooseWhole pv f = Pattern $ \s -> concatMap (match s) $ query pv s
-  where match s e = map (withWhole e) $ query (f $ value e) (active e)
-        withWhole e e' = e' {whole = chooseWhole (whole e) (whole e')}
-
-sound :: Pattern String -> ControlPattern
-sound pat = (Map.singleton "sound" . S) <$> pat
-
-note :: Pattern Double -> ControlPattern
-note pat = (Map.singleton "note" . F) <$> pat
+-- ************************************************************ --
 
 (#) :: ControlPattern -> ControlPattern -> ControlPattern
 (#) a b = Map.union <$> a <*> b
@@ -200,4 +230,12 @@ note pat = (Map.singleton "note" . F) <$> pat
 
 (+|) :: Num a => Pattern a -> Pattern a -> Pattern a
 (+|) a b = ((+) <$> a) *> b
+
+-- ************************************************************ --
+
+sound :: Pattern String -> ControlPattern
+sound pat = (Map.singleton "sound" . S) <$> pat
+
+note :: Pattern Double -> ControlPattern
+note pat = (Map.singleton "note" . F) <$> pat
 
