@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFunctor, OverloadedStrings #-}
 
 -- (c) Alex McLean 2021
 -- Shared under the terms of the GNU Public License v. 3.0
@@ -10,6 +10,13 @@ import Data.Fixed (mod')
 import Data.Maybe (catMaybes)
 import qualified Data.Map.Strict as Map
 import Control.Applicative (liftA2)
+
+import Text.Megaparsec hiding (State)
+import Text.Megaparsec.Char
+import qualified Data.Text as T
+import qualified Text.Megaparsec.Char.Lexer as L
+import Data.Void (Void)
+import Data.Text as T (Text)
 
 import Prelude hiding ((<*), (*>))
 
@@ -45,7 +52,6 @@ data Value = S String
            | F Double
            | R Rational
        deriving (Show)
-
 
 -- ************************************************************ --
 
@@ -117,11 +123,17 @@ nextSam :: Rational -> Rational
 nextSam s = sam s + 1
 
 -- | Splits a timespan at cycle boundaries
-spanCycles :: Span -> [Span]
-spanCycles (Span b e) | e <= b = []
+splitSpans :: Span -> [Span]
+splitSpans (Span b e) | e <= b = []
                       | sam b == sam e = [Span b e]
                       | otherwise
-  = (Span b (nextSam b)):(spanCycles (Span (nextSam b) e))
+  = (Span b (nextSam b)):(splitSpans (Span (nextSam b) e))
+
+withEventSpan :: (Span -> Span) -> Pattern a -> Pattern a
+withEventSpan spanf pat = Pattern f
+  where f s = map (\e -> e {active = spanf $ active e,
+                            whole = spanf <$> whole e
+                           }) $ query pat s
 
 withEventTime :: (Rational -> Rational) -> Pattern a -> Pattern a
 withEventTime timef pat = Pattern f
@@ -129,13 +141,14 @@ withEventTime timef pat = Pattern f
                             whole = withSpanTime timef <$> whole e
                            }) $ query pat s
 
-withQueryTime :: (Rational -> Rational) -> Pattern a -> Pattern a
-withQueryTime timef pat = Pattern f
-  where f s = query pat (withSpanTime timef s)
-
 withSpanTime :: (Rational -> Rational) -> Span -> Span
 withSpanTime timef (Span b e) = Span (timef b) (timef e)
 
+withQuery :: (Span -> Span) -> Pattern a -> Pattern a
+withQuery spanf pat = Pattern $ \s -> query pat $ spanf s
+
+withQueryTime :: (Rational -> Rational) -> Pattern a -> Pattern a
+withQueryTime timef = withQuery (withSpanTime timef)
 
 -- ************************************************************ --
 -- Fundamental patterns
@@ -146,7 +159,7 @@ silence = Pattern (\_ -> [])
 -- | Repeat discrete value once per cycle
 atom :: a -> Pattern a
 atom v = Pattern f
-  where f s = map (\s' -> Event (Just $ wholeCycle $ begin s') s' v) (spanCycles s)
+  where f s = map (\s' -> Event (Just $ wholeCycle $ begin s') s' v) (splitSpans s)
         wholeCycle :: Rational -> Span
         wholeCycle t = Span (sam t) (nextSam t)
 
@@ -191,12 +204,14 @@ sine2 = signal $ \t -> realToFrac $ sin ((pi :: Double) * 2 * fromRational t)
 -- ************************************************************ --
 -- Pattern manipulations
 
+splitQueries :: Pattern a -> Pattern a
+splitQueries pat = Pattern $ \s -> (concatMap (query pat) $ splitSpans s)
+
 -- | Concatenate a list of patterns (works a little differently from
 -- 'real' tidal, needs some work)
 slowcat :: [Pattern a] -> Pattern a
-slowcat pats = Pattern f
-  where f s = concatMap queryCycle $ spanCycles s
-        queryCycle s = query (pats !! (mod (floor $ begin s) n)) s
+slowcat pats = splitQueries $ Pattern queryCycle
+  where queryCycle s = query (pats !! (mod (floor $ begin s) n)) s
         n = length pats
 
 fast :: Rational -> Pattern a -> Pattern a
@@ -204,6 +219,18 @@ fast t pat = withEventTime (/t) $ withQueryTime (*t) $ pat
 
 slow :: Rational -> Pattern a -> Pattern a
 slow t = fast (1/t)
+
+early :: Rational -> Pattern a -> Pattern a
+early t pat = withEventTime (subtract t) $ withQueryTime (+ t) $ pat
+
+(<~) :: Rational -> Pattern a -> Pattern a
+(<~) = early
+
+late :: Rational -> Pattern a -> Pattern a
+late t = early (0-t)
+
+(~>) :: Rational -> Pattern a -> Pattern a
+(~>) = late
 
 fastcat :: [Pattern a] -> Pattern a
 fastcat pats = fast (toRational $ length pats) $ slowcat pats
@@ -214,8 +241,16 @@ fastappend a b = fastcat [a,b]
 slowappend :: Pattern a -> Pattern a -> Pattern a
 slowappend a b = slowcat [a,b]
 
-stack :: [Pattern a] -> Pattern a
-stack pats = Pattern $ \s -> concatMap (\pat -> query pat s) pats
+stackPats :: [Pattern a] -> Pattern a
+stackPats pats = Pattern $ \s -> concatMap (\pat -> query pat s) pats
+
+squash :: Rational -> Pattern a -> Pattern a
+squash into pat = splitQueries $ withEventSpan ef $ withQuery qf pat
+  where qf (Span s e) = Span (sam s + (min 1 $ (s - sam s) / into)) (sam s + (min 1 $ (e - sam s) / into))
+        ef (Span s e) = Span (sam s + (s - sam s) * into) (sam s + (e - sam s) * into)
+
+squashTo :: Span -> Pattern a -> Pattern a
+squashTo (Span b e) = late b . squash (e-b)
 
 -- ************************************************************ --
 
@@ -238,4 +273,49 @@ sound pat = (Map.singleton "sound" . S) <$> pat
 
 note :: Pattern Double -> ControlPattern
 note pat = (Map.singleton "note" . F) <$> pat
+
+-- ************************************************************ --
+-- Sequences
+--
+
+data Rhythm a = Atom a
+  | Silence
+  | Subsequence {rSteps   :: [Step a]  }
+  | StackCycles  {rRhythms :: [Rhythm a]}
+  | StackBeats   {rRhythms :: [Rhythm a]}
+  deriving Show
+
+data Step a = Step {sDuration :: Rational,
+                    sRhythm :: Rhythm a
+                   }
+  deriving Show
+
+split :: [Rhythm a] -> Rhythm a
+split rs = Subsequence $ map (Step 1) rs
+
+stackCycles :: [Rhythm a] -> Rhythm a
+stackCycles = StackCycles
+
+stackBeats :: [Rhythm a] -> Rhythm a
+stackBeats = StackBeats
+
+class Common a where
+  stack :: [a] -> a
+
+instance Common (Pattern a) where
+  stack = stackPats
+
+instance Common (Rhythm a) where
+  stack = stackCycles
+
+rhythm :: Rhythm a -> Pattern a
+rhythm Silence = silence
+rhythm (Atom v) = atom v
+-- rhythm (Subsequence) = 
+
+-- ************************************************************ --
+-- Parser
+--
+
+type Parser = Parsec Void Text
 
