@@ -98,6 +98,11 @@ bindWhole :: (Maybe Span -> Maybe Span -> Maybe Span) -> Pattern a -> (a -> Patt
 bindWhole chooseWhole pv f = Pattern $ \s -> concatMap (match s) $ query pv s
   where match s e = map (withWhole e) $ query (f $ value e) (active e)
         withWhole e e' = e' {whole = chooseWhole (whole e) (whole e')}
+-- ************************************************************ --
+-- General hacks
+
+instance Show (a -> b) where
+  show _ = "<function>"
 
 -- ************************************************************ --
 -- Time utilities
@@ -285,6 +290,9 @@ data Rhythm a = Atom a
   | StackSteps {rPerCycle :: Rational,
                 rRhythms  :: [Rhythm a]
                }
+  | Patterning {rFunction :: Pattern a -> Pattern a,
+                rRhythm :: Rhythm a
+               }
   deriving Show
 
 data Step a = Step {sDuration :: Rational,
@@ -317,7 +325,7 @@ rhythm r@(Subsequence ss) = stack $ snd $ foldr f (steps,[]) ss
 rhythm (StackCycles rs) = stack $ map rhythm rs
 rhythm (StackSteps _ []) = silence
 rhythm (StackSteps spc rs) = stack $ map (\r -> fast (spc/stepCount r) $ rhythm r) rs
-        
+rhythm (Patterning f r) = f $ rhythm r
 
 -- ************************************************************ --
 -- Functions common to both rhythms and patterns
@@ -325,16 +333,13 @@ rhythm (StackSteps spc rs) = stack $ map (\r -> fast (spc/stepCount r) $ rhythm 
 
 class Common a where
   stack :: [a] -> a
-  toPattern :: a b -> Pattern b
   
 
 instance Common (Pattern a) where
   stack = stackPats
-  toPattern = id
 
 instance Common (Rhythm a) where
   stack = stackCycles
-  toPattern = rhythm
 
 -- ************************************************************ --
 -- Parser
