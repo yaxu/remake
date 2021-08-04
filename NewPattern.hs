@@ -11,10 +11,10 @@ import Data.Maybe (catMaybes)
 import qualified Data.Map.Strict as Map
 import Control.Applicative (liftA2)
 
-import Text.Megaparsec hiding (State)
-import Text.Megaparsec.Char
+--import Text.Megaparsec hiding (State)
+--import Text.Megaparsec.Char
 import qualified Data.Text as T
-import qualified Text.Megaparsec.Char.Lexer as L
+--import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Void (Void)
 import Data.Text as T (Text)
 
@@ -249,8 +249,8 @@ squash into pat = splitQueries $ withEventSpan ef $ withQuery qf pat
   where qf (Span s e) = Span (sam s + (min 1 $ (s - sam s) / into)) (sam s + (min 1 $ (e - sam s) / into))
         ef (Span s e) = Span (sam s + (s - sam s) * into) (sam s + (e - sam s) * into)
 
-squashTo :: Span -> Pattern a -> Pattern a
-squashTo (Span b e) = late b . squash (e-b)
+squashTo :: Rational -> Rational -> Pattern a -> Pattern a
+squashTo b e = late b . squash (e-b)
 
 -- ************************************************************ --
 
@@ -281,8 +281,10 @@ note pat = (Map.singleton "note" . F) <$> pat
 data Rhythm a = Atom a
   | Silence
   | Subsequence {rSteps   :: [Step a]  }
-  | StackCycles  {rRhythms :: [Rhythm a]}
-  | StackBeats   {rRhythms :: [Rhythm a]}
+  | StackCycles {rRhythms :: [Rhythm a]}
+  | StackSteps {rPerCycle :: Rational,
+                rRhythms  :: [Rhythm a]
+               }
   deriving Show
 
 data Step a = Step {sDuration :: Rational,
@@ -296,26 +298,47 @@ split rs = Subsequence $ map (Step 1) rs
 stackCycles :: [Rhythm a] -> Rhythm a
 stackCycles = StackCycles
 
-stackBeats :: [Rhythm a] -> Rhythm a
-stackBeats = StackBeats
+stackSteps :: [Rhythm a] -> Rhythm a
+stackSteps [] = Silence
+stackSteps rs = StackSteps (stepCount $ head rs) rs
 
-class Common a where
-  stack :: [a] -> a
+-- | Count the total duration of steps in a rhythm
+stepCount :: Rhythm a -> Rational
+stepCount (Subsequence ss) = sum $ map sDuration ss
+stepCount _ = 1
 
-instance Common (Pattern a) where
-  stack = stackPats
-
-instance Common (Rhythm a) where
-  stack = stackCycles
-
+-- | Turn a rhythm into a pattern
 rhythm :: Rhythm a -> Pattern a
 rhythm Silence = silence
 rhythm (Atom v) = atom v
--- rhythm (Subsequence) = 
+rhythm r@(Subsequence ss) = stack $ snd $ foldr f (steps,[]) ss
+  where f (Step d r) (s,xs) = ((s-d), (squashTo ((s-d)/steps) (s/steps) $ rhythm r):xs)
+        steps = stepCount r
+rhythm (StackCycles rs) = stack $ map rhythm rs
+rhythm (StackSteps _ []) = silence
+rhythm (StackSteps spc rs) = stack $ map (\r -> fast (spc/stepCount r) $ rhythm r) rs
+        
+
+-- ************************************************************ --
+-- Functions common to both rhythms and patterns
+--
+
+class Common a where
+  stack :: [a] -> a
+  toPattern :: a b -> Pattern b
+  
+
+instance Common (Pattern a) where
+  stack = stackPats
+  toPattern = id
+
+instance Common (Rhythm a) where
+  stack = stackCycles
+  toPattern = rhythm
 
 -- ************************************************************ --
 -- Parser
 --
 
-type Parser = Parsec Void Text
+--type Parser = Parsec Void Text
 
