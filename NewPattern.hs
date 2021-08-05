@@ -11,13 +11,6 @@ import Data.Maybe (catMaybes)
 import qualified Data.Map.Strict as Map
 import Control.Applicative (liftA2)
 
---import Text.Megaparsec hiding (State)
---import Text.Megaparsec.Char
-import qualified Data.Text as T
---import qualified Text.Megaparsec.Char.Lexer as L
-import Data.Void (Void)
-import Data.Text as T (Text)
-
 import Prelude hiding ((<*), (*>))
 
 -- ************************************************************ --
@@ -333,17 +326,10 @@ rhythm (Patterning f r) = f $ rhythm r
 
 class Common a where
   stack :: [a] -> a
-  
 
 instance Common (Pattern a) where
   stack = stackPats
 
 instance Common (Rhythm a) where
   stack = stackCycles
-
--- ************************************************************ --
--- Parser
---
-
---type Parser = Parsec Void Text
 
