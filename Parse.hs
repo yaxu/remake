@@ -3,7 +3,6 @@
 module Parse where
 
 import Control.Monad (void)
-import Data.Text (Text)
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
@@ -11,16 +10,15 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Ratio
 
 import NewPattern
-
+import Types
 
 -- ************************************************************ --
 -- Parser
 --
 
-type Parser = Parsec Void Text
+type Parser = Parsec Void String
 
 data RhythmT a = Sequence
-
 
 sc :: Parser ()
 sc = L.space (void spaceChar) lineCmnt blockCmnt
@@ -30,7 +28,7 @@ sc = L.space (void spaceChar) lineCmnt blockCmnt
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
-symbol :: Text -> Parser Text
+symbol :: String -> Parser String
 symbol = L.symbol sc
 
 parens,braces,angles,brackets :: Parser a -> Parser a
@@ -39,7 +37,7 @@ braces    = between (symbol "{") (symbol "}")
 angles    = between (symbol "<") (symbol ">")
 brackets  = between (symbol "[") (symbol "]")
 
-comma :: Parser Text
+comma :: Parser String
 comma = symbol ","
 
 parseSequence :: Parser a -> Parser (Rhythm a)
@@ -55,7 +53,7 @@ parseStep p = do r <- parseRhythm p
 parseRatio :: Parser Rational
 parseRatio = do try $ (toRational <$> L.float)
                 <|> do num <- L.decimal
-                       denom <- do char '%'
+                       denom <- do single '%'
                                    L.decimal
                                 <|> return 1
                        return $ num % denom
@@ -66,3 +64,41 @@ parseRhythm p = (symbol "~" >> return Silence)
                 <|> brackets (StackCycles <$> (parseSequence p) `sepBy` comma)
                 <|> braces (stackSteps <$> (parseSequence p) `sepBy` comma)
                 <|> angles (StackSteps 1 <$> (parseSequence p) `sepBy` comma)
+                -- <|> parens
+
+parseIdentifier :: Parser String
+parseIdentifier = lexeme $ do x <- (letterChar <|> single '_')
+                              xs <- many (alphaNumChar <|> single '_' <|> single '\'')
+                              return $ x:xs
+
+parseOperator :: Parser String
+parseOperator = lexeme $ some (oneOf ("<>?!|-~+*%$'.#" :: [Char]))
+
+parseExpr :: Sig -> Parser Code
+parseExpr targetSig = do ident <- parseIdentifier
+                         let matchSig = do (tok, identSig) <- lookup ident functions
+                                           sig <- canAs targetSig identSig
+                                           return (tok, sig)
+                         case matchSig of
+                           Just (tok, sig) ->
+                             do let d = arity (is sig) - arity (is targetSig)
+                                if d > 0
+                                  then return tok
+                                  else case sig of
+                                         (Sig p (T_F a b)) -> do c <- parseExpr $ Sig p b
+                                                                 return $ Tk_App tok c
+                                         _ -> fail "Internal error asdfasdfx"
+                           Nothing -> fail "Internal error agrgergaergaergx"
+
+parseToken :: Sig -> Parser Code
+parseToken targetSig = parens $ parseExpr targetSig
+  <|> do ident <- parseIdentifier
+         let match = do (tok, identSig) <- lookup ident functions
+                        asSig <- canAs targetSig identSig
+                        return (tok, asSig)
+         case match of
+           Just (tok, sig) -> if arity (is sig) == arity (is targetSig)
+                              then return tok
+                              else fail "bah"
+           Nothing -> fail "humbug"
+           
