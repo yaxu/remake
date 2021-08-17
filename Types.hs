@@ -1,6 +1,7 @@
 module Types where
 
 import Data.List (intersectBy, nub, (\\), intercalate)
+import Data.Maybe (isJust)
 import NewPattern
 
 -- ************************************************************ --
@@ -97,44 +98,56 @@ isFn :: Type -> Bool
 isFn (T_F _ _) = True
 isFn _ = False
 
-{-
-resolveConstraint :: [Type] -> Type -> Type
-resolveConstraint ps (T_Constraint n) = ps !! n
-resolveConstraint ps (T_F a b) = T_F (resolveConstraint ps a) (resolveConstraint ps b)
-resolveConstraint ps (T_OneOf ts) = T_OneOf $ map (resolveConstraint ps) ts
-resolveConstraint ps (T_Pattern t) = T_Pattern $ resolveConstraint ps t
-resolveConstraint ps (T_List t) = T_List $ resolveConstraint ps t
-resolveConstraint _ t = t
--}
-
 setAt :: [a] -> Int -> a -> [a]
 setAt xs i x = take i xs ++ [x] ++ drop (i + 1) xs
 
 fitsConstraint :: Type -> [Constraint]-> Int -> Bool
 fitsConstraint t cs i | i >= length cs = error "Internal error - no such constraint"
                       | c == C_WildCard = True
-                      | otherwise = or $ map (\t' -> fits t $ Sig cs t') $ options c
+                      | otherwise = or $ map (\t' -> fits' t $ Sig cs t') $ options c
    where c = cs !! i
          options (C_OneOf cs) = cs
          options _ = [] -- can't happen..
 
-fits :: Type -> Sig -> Bool
-fits t (Sig cs (T_Constraint i)) = fitsConstraint t cs i
-fits (T_F arg result) (Sig c (T_F arg' result')) = fits arg (Sig c arg') && fits result (Sig c result')
+
+fits' :: Type -> Sig -> Bool
+fits' t s = isJust $ fits t s
+
+fits :: Type -> Sig -> Maybe ([(Int, Type)])
+fits t (Sig cs (T_Constraint i)) = if (fitsConstraint t cs i)
+                                   then Just [(i, t)]
+                                   else Nothing
+fits (T_F arg result) (Sig c (T_F arg' result')) = do as <- fits arg (Sig c arg')
+                                                      bs <- fits result (Sig c result')
+                                                      return $ as ++ bs
 fits (T_Pattern a) (Sig c (T_Pattern b)) = fits a (Sig c b)
 fits (T_List a) (Sig c (T_List b)) = fits a (Sig c b)
-fits a (Sig _ b) = a == b
+fits a (Sig _ b) = if a == b
+                   then Just []
+                   else Nothing
 
 -- How can b produce target a?
 -- Will either return the target need, or a function that can
 -- return it, or nothing.
 fulfill :: Type -> Sig -> Maybe Type
-fulfill need@(T_F _ _) contender@(Sig c (T_F arg result))
-  | arityD == 0 && fits need contender = Just need
-  | arityD > 0 = T_F arg <$> fulfill need (Sig c result)
+fulfill n c = do (cs, t) <- fulfill' n c
+                 resolveConstraint cs t
+
+fulfill' :: Type -> Sig -> Maybe ([(Int, Type)], Type)
+fulfill' need contender@(Sig c (T_F arg result))
+  | arityD == 0 = do cs <- fits need contender
+                     return (cs, need)
+  | arityD > 0 = (T_F arg <$>) <$> fulfill' need (Sig c result)
   | otherwise = Nothing
   where arityD = arity (is contender) - arity need
+fulfill' need contender = do cs <- fits need contender
+                             return (cs, need)
 
-fulfill need contender | fits need contender = Just need
-                       | otherwise = Nothing
+resolveConstraint :: [(Int, Type)] -> Type -> Maybe Type
+resolveConstraint cs (T_Constraint n) = lookup n cs
+resolveConstraint cs (T_F a b)
+  = T_F <$> resolveConstraint cs a <*> resolveConstraint cs b
+resolveConstraint cs (T_Pattern t) = T_Pattern <$> resolveConstraint cs t
+resolveConstraint cs (T_List t) = T_List <$> resolveConstraint cs t
+resolveConstraint _ t = Just t
 

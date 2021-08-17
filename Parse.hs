@@ -95,7 +95,6 @@ pClosed T_String = Tk_String <$> stringLiteral
 pClosed T_Bool = Tk_Bool True <$ symbol "True"
                  <|> Tk_Bool False <$ symbol "False"
 pClosed t = parens $ pFn t <|> pClosed t
-pClosed t = fail $ "Unknown type: " ++ show t
 
 pFn :: Type -> Parser Code
 pFn need =
