@@ -6,10 +6,11 @@ import Control.Monad (void)
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
+import Text.Megaparsec.Debug
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Ratio
 
-import NewPattern
+import NewPattern hiding ((*>),(<*))
 import Types
 
 -- ************************************************************ --
@@ -28,6 +29,15 @@ sc = L.space (void spaceChar) lineCmnt blockCmnt
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
+integer :: Parser Int
+integer = lexeme L.decimal
+
+signedInteger :: Parser Int
+signedInteger = L.signed (return ()) $ lexeme L.decimal
+
+stringLiteral :: Parser String
+stringLiteral = char '\"' *> manyTill L.charLiteral (char '\"')
+
 symbol :: String -> Parser String
 symbol = L.symbol sc
 
@@ -40,65 +50,68 @@ brackets  = between (symbol "[") (symbol "]")
 comma :: Parser String
 comma = symbol ","
 
-parseSequence :: Parser a -> Parser (Rhythm a)
-parseSequence p = Subsequence <$> many (parseStep p)
+pSequence :: Parser a -> Parser (Rhythm a)
+pSequence p = Subsequence <$> many (pStep p)
 
-parseStep :: Parser a -> Parser (Step a)
-parseStep p = do r <- parseRhythm p
-                 d <- do symbol "@"
-                         parseRatio
-                      <|> return 1
-                 return $ Step d r
+pStep :: Parser a -> Parser (Step a)
+pStep p = do r <- pRhythm p
+             d <- do void $ symbol "@"
+                     pRatio
+                  <|> return 1
+             return $ Step d r
 
-parseRatio :: Parser Rational
-parseRatio = do try $ (toRational <$> L.float)
-                <|> do num <- L.decimal
-                       denom <- do single '%'
-                                   L.decimal
-                                <|> return 1
-                       return $ num % denom
+pRatio :: Parser Rational
+pRatio = do try $ (toRational <$> L.float)
+            <|> do num <- L.decimal
+                   denom <- do single '%'
+                               L.decimal
+                            <|> return 1
+                   return $ num % denom
 
-parseRhythm :: Parser a -> Parser (Rhythm a)
-parseRhythm p = (symbol "~" >> return Silence)
-                <|> Atom <$> p
-                <|> brackets (StackCycles <$> (parseSequence p) `sepBy` comma)
-                <|> braces (stackSteps <$> (parseSequence p) `sepBy` comma)
-                <|> angles (StackSteps 1 <$> (parseSequence p) `sepBy` comma)
-                -- <|> parens
+pRhythm :: Parser a -> Parser (Rhythm a)
+pRhythm p = (symbol "~" >> return Silence)
+            <|> Atom <$> p
+            <|> brackets (StackCycles <$> (pSequence p) `sepBy` comma)
+            <|> braces (stackSteps <$> (pSequence p) `sepBy` comma)
+            <|> angles (StackSteps 1 <$> (pSequence p) `sepBy` comma)
+            -- <|> parens
 
-parseIdentifier :: Parser String
-parseIdentifier = lexeme $ do x <- (letterChar <|> single '_')
-                              xs <- many (alphaNumChar <|> single '_' <|> single '\'')
-                              return $ x:xs
+pIdentifier :: Parser String
+pIdentifier = lexeme $ do x <- lowerChar
+                          xs <- many $ choice [alphaNumChar,
+                                               single '_',
+                                               single '\''
+                                              ]
+                          return $ x:xs
 
-parseOperator :: Parser String
-parseOperator = lexeme $ some (oneOf ("<>?!|-~+*%$'.#" :: [Char]))
+pOperator :: Parser String
+pOperator = lexeme $ some (oneOf ("<>?!|-~+*%$'.#" :: [Char]))
 
-parseExpr :: Sig -> Parser Code
-parseExpr targetSig = do ident <- parseIdentifier
-                         let matchSig = do (tok, identSig) <- lookup ident functions
-                                           sig <- canAs targetSig identSig
-                                           return (tok, sig)
-                         case matchSig of
-                           Just (tok, sig) ->
-                             do let d = arity (is sig) - arity (is targetSig)
-                                if d > 0
-                                  then return tok
-                                  else case sig of
-                                         (Sig p (T_F a b)) -> do c <- parseExpr $ Sig p b
-                                                                 return $ Tk_App tok c
-                                         _ -> fail "Internal error asdfasdfx"
-                           Nothing -> fail "Internal error agrgergaergaergx"
 
-parseToken :: Sig -> Parser Code
-parseToken targetSig = parens $ parseExpr targetSig
-  <|> do ident <- parseIdentifier
-         let match = do (tok, identSig) <- lookup ident functions
-                        asSig <- canAs targetSig identSig
-                        return (tok, asSig)
-         case match of
-           Just (tok, sig) -> if arity (is sig) == arity (is targetSig)
-                              then return tok
-                              else fail "bah"
-           Nothing -> fail "humbug"
-           
+pClosed :: Type -> Parser Code
+pClosed T_Int = Tk_Int <$> signedInteger
+pClosed T_Rational = Tk_Rational <$> pRatio
+pClosed T_String = Tk_String <$> stringLiteral
+pClosed T_Bool = Tk_Bool True <$ symbol "True"
+                 <|> Tk_Bool False <$ symbol "False"
+pClosed t = parens $ pFn t <|> pClosed t
+pClosed t = fail $ "Unknown type: " ++ show t
+
+pFn :: Type -> Parser Code
+pFn need =
+  do ident <- dbg "identifier" pIdentifier
+     (tok, t) <- case (lookup ident functions) of
+                   Just (tok, identSig) ->
+                     case (fulfill need identSig) of
+                       Just t -> return (tok, t)
+                       Nothing -> fail $ "Bad type of " ++ ident ++ "\nfound: " ++ show identSig ++ "\ntarget: " ++ show need
+                   Nothing -> fail "Unknown function"
+     args t (arity t - arity need) tok
+
+args _ 0 tok = return tok
+args t n tok | n < 0 = error "Internal error, negative args?"
+             | otherwise = do let (T_F arg result) = t
+                              argtok <- pClosed arg
+                              args result (n - 1) (Tk_App tok argtok)
+
+
