@@ -122,3 +122,32 @@ args n tok | n < 0 = error "Internal error, negative args?"
                             argtok <- pClosed
                             put result
                             args (n - 1) (Tk_App tok argtok)
+
+pNumber :: Parser ()
+pNumber = do optional $ char '-'
+             some digit
+             optional $ do oneOf ['.', '%']
+                           some digit
+             return ()
+  where digit = oneOf ['0'..'9']
+
+
+pSlurpTerm :: Parser ()
+pSlurpTerm = do parens pSlurpAll
+                  <|> brackets pSlurpAll
+                  <|> braces pSlurpAll
+                  <|> angles pSlurpAll
+                  <|> (stringLiteral >> return ())
+                  <|> (pIdentifier >> return ())
+                  <|> pNumber
+                return ()
+
+pSlurpAll :: Parser ()
+pSlurpAll = do many (pSlurpTerm <|> (pOp >> return ()))
+               return ()
+
+pOp :: Parser String
+pOp = symbol "*" <|> symbol "|*"
+
+pFindOp = do many pSlurpTerm
+             pOp
