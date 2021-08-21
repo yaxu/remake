@@ -4,9 +4,10 @@ module Parse where
 
 import Control.Monad (void)
 import Data.Void
-import Text.Megaparsec
+import Text.Megaparsec hiding (State)
 import Text.Megaparsec.Char
 import Text.Megaparsec.Debug
+import Control.Monad.State (evalState, State, get, put)
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Ratio
 
@@ -17,7 +18,9 @@ import Types
 -- Parser
 --
 
-type Parser = Parsec Void String
+type Parser = ParsecT Void String (State Type)
+
+-- type Parser = Parsec Void String
 
 data RhythmT a = Sequence
 
@@ -88,29 +91,34 @@ pOperator :: Parser String
 pOperator = lexeme $ some (oneOf ("<>?!|-~+*%$'.#" :: [Char]))
 
 
-pClosed :: Type -> Parser Code
-pClosed T_Int = Tk_Int <$> signedInteger
-pClosed T_Rational = Tk_Rational <$> pRatio
-pClosed T_String = Tk_String <$> stringLiteral
-pClosed T_Bool = Tk_Bool True <$ symbol "True"
-                 <|> Tk_Bool False <$ symbol "False"
-pClosed t = parens $ pFn t <|> pClosed t
+pClosed :: Parser Code
+pClosed = do t <- get
+             case t of
+               T_Int -> Tk_Int <$> signedInteger
+               T_Rational -> Tk_Rational <$> pRatio
+               T_String -> Tk_String <$> stringLiteral
+               T_Bool -> Tk_Bool True <$ symbol "True"
+                         <|> Tk_Bool False <$ symbol "False"
+               _ -> do parens $ pFn <|> pClosed
 
-pFn :: Type -> Parser Code
-pFn need =
-  do ident <- dbg "identifier" pIdentifier
+pFn :: Parser Code
+pFn =
+  do need <- get
+     ident <- dbg "identifier" pIdentifier
      (tok, t) <- case (lookup ident functions) of
                    Just (tok, identSig) ->
                      case (fulfill need identSig) of
                        Just t -> return (tok, t)
                        Nothing -> fail $ "Bad type of " ++ ident ++ "\nfound: " ++ show identSig ++ "\ntarget: " ++ show need
                    Nothing -> fail "Unknown function"
-     args t (arity t - arity need) tok
+     put t
+     args (arity t - arity need) tok
 
-args _ 0 tok = return tok
-args t n tok | n < 0 = error "Internal error, negative args?"
-             | otherwise = do let (T_F arg result) = t
-                              argtok <- pClosed arg
-                              args result (n - 1) (Tk_App tok argtok)
-
-
+args :: Int -> Code -> Parser Code
+args 0 tok = return tok
+args n tok | n < 0 = error "Internal error, negative args?"
+           | otherwise = do (T_F arg result) <- get
+                            put arg
+                            argtok <- pClosed
+                            put result
+                            args (n - 1) (Tk_App tok argtok)
