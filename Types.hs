@@ -64,7 +64,9 @@ data Code =
   Tk_divide |
   Tk_subtract |
   Tk_rev |
-  Tk_hash
+  Tk_hash |
+  Tk_dollar |
+  Tk_pure
   
   deriving (Show)
 
@@ -77,8 +79,10 @@ functions =
     ("/", (Tk_divide, Infix, numOp)),    
     ("-", (Tk_subtract, Infix, numOp)),    
     ("#", (Tk_hash, Infix, ppOp)),
+    ("$", (Tk_dollar, Infix, Sig [C_WildCard, C_WildCard] $ T_F (T_F (T_Constraint 0) (T_Constraint 1)) (T_F (T_Constraint 0) (T_Constraint 1)))),
     ("every", (Tk_every, Prefix, i_pf_p)),
-    ("rev", (Tk_rev, Prefix, pOp))
+    ("rev", (Tk_rev, Prefix, pOp)),
+    ("pure", (Tk_pure, Prefix, Sig [C_WildCard] $ T_F (T_Constraint 0) (T_Pattern $ T_Constraint 0)))
    ]
   where pi_pf_p = Sig [C_WildCard] $ T_F (T_Pattern T_Int)
                   (T_F (T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0))

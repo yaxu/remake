@@ -91,13 +91,14 @@ pOperator = lexeme $ some (oneOf ("<>?!|-~+*%$'.#" :: [Char]))
 
 
 pClosed :: Type -> Parser Code
-pClosed need = do dbg "pClosed" $ case need of
-                    T_Int -> Tk_Int <$> signedInteger
-                    T_Rational -> Tk_Rational <$> pRatio
-                    T_String -> Tk_String <$> stringLiteral
-                    T_Bool -> Tk_Bool True <$ symbol "True"
-                      <|> Tk_Bool False <$ symbol "False"
-                    _ -> do parens $ pFn need <|> pInfix need <|> pClosed need
+pClosed need = case need of
+                 T_Int -> Tk_Int <$> signedInteger
+                 T_Rational -> Tk_Rational <$> pRatio
+                 T_String -> Tk_String <$> stringLiteral
+                 T_Bool -> Tk_Bool True <$ symbol "True"
+                   <|> Tk_Bool False <$ symbol "False"
+                 _ -> fail "Not a value"
+               <|> (parens $ pFn need <|> pInfix need <|> pClosed need)
 
 pInfix :: Type -> Parser Code
 pInfix need = do (tok, T_F a (T_F b c)) <- pPeekOp need
@@ -109,8 +110,10 @@ pInfix need = do (tok, T_F a (T_F b c)) <- pPeekOp need
                            (Just _, Nothing) -> (T_F b c)
                            (Nothing, Just _) -> (T_F a c)
                            (Just _, Just _) -> c
-                 unless (need == t) $ fail "TODO helpful error message around operator arity"
+                 unless (need == t) $ fail $ "Expected type " ++ show need
                  return $ Tk_Op a' tok b'
+
+
 
 pFn :: Type -> Parser Code
 pFn need =
