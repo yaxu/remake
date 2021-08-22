@@ -59,14 +59,19 @@ data Code =
   Tk_App Code Code |
   Tk_every | Tk_fast |
   Tk_plus |
-  Tk_rev
+  Tk_rev |
+  Tk_hash
+  
   deriving (Show)
 
-functions :: [(String, (Code, Sig))]
+data Fix = Prefix | Infix
+
+functions :: [(String, (Code, Fix, Sig))]
 functions =
-   [("+", (Tk_plus, numOp)),
-    ("every", (Tk_every, i_pf_p)),
-    ("rev", (Tk_rev, pOp))
+   [("+", (Tk_plus, Infix, numOp)),
+    ("#", (Tk_hash, Infix, ppOp)),
+    ("every", (Tk_every, Prefix, i_pf_p)),
+    ("rev", (Tk_rev, Prefix, pOp))
    ]
   where pi_pf_p = Sig [C_WildCard] $ T_F (T_Pattern T_Int)
                   (T_F (T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0))
@@ -80,6 +85,7 @@ functions =
                 $ T_F (T_Pattern $ T_Constraint 0) $ T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0)
         sOp = Sig [] $ T_F (T_Pattern $ T_String) (T_Pattern $ T_String)
         pOp = Sig [C_WildCard] $ T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0)
+        ppOp = Sig [C_WildCard] $ T_F (T_Pattern $ T_Constraint 0) $ T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0)
 {-
         floatOp = Sig [] $ T_F (T_Pattern T_Float) (T_F (T_Pattern T_Float) (T_Pattern T_Float))
         floatPat = Sig [] $ T_Pattern T_Float

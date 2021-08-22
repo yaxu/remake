@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Parse where
 
 import Control.Monad (void)
@@ -106,11 +104,12 @@ pFn =
   do need <- get
      ident <- dbg "identifier" pIdentifier
      (tok, t) <- case (lookup ident functions) of
-                   Just (tok, identSig) ->
+                   Just (tok, Prefix, identSig) ->
                      case (fulfill need identSig) of
                        Just t -> return (tok, t)
                        Nothing -> fail $ "Bad type of " ++ ident ++ "\nfound: " ++ show identSig ++ "\ntarget: " ++ show need
                    Nothing -> fail "Unknown function"
+                   _ -> fail "TODO - handle infix section"
      put t
      args (arity t - arity need) tok
 
@@ -147,7 +146,18 @@ pSlurpAll = do many (pSlurpTerm <|> (pOp >> return ()))
                return ()
 
 pOp :: Parser String
-pOp = symbol "*" <|> symbol "|*"
+pOp = some $ oneOf "!#$%&*+./<=>?@\\^|-~"
 
-pFindOp = do many pSlurpTerm
-             pOp
+pPeekOp :: Parser (Maybe Type)
+pPeekOp = try $ lookAhead $ do need <- get
+                               many pSlurpTerm
+                               op <- pOp
+                               case (lookup op functions) of
+                                 Just (tok, Infix, opSig) ->
+                                   case (fulfill need opSig) of
+                                     Just t -> return $ Just t
+                                     Nothing -> fail $ "Bad type of " ++ op ++ "\nfound: " ++ show opSig ++ "\ntarget: " ++ show need
+                                 Nothing -> fail $ "Unknown operator " ++ op
+                                 _ -> fail "Unexpected prefix function.."
+          <|> return Nothing
+             
