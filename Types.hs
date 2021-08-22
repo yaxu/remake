@@ -57,8 +57,12 @@ instance Show Sig where
 data Code =
   Tk_Int Int | Tk_Rational Rational | Tk_String String | Tk_Float Float | Tk_Bool Bool |
   Tk_App Code Code |
+  Tk_Op (Maybe Code) Code (Maybe Code) |
   Tk_every | Tk_fast |
   Tk_plus |
+  Tk_multiply |
+  Tk_divide |
+  Tk_subtract |
   Tk_rev |
   Tk_hash
   
@@ -69,6 +73,9 @@ data Fix = Prefix | Infix
 functions :: [(String, (Code, Fix, Sig))]
 functions =
    [("+", (Tk_plus, Infix, numOp)),
+    ("*", (Tk_multiply, Infix, numOp)),    
+    ("/", (Tk_divide, Infix, numOp)),    
+    ("-", (Tk_subtract, Infix, numOp)),    
     ("#", (Tk_hash, Infix, ppOp)),
     ("every", (Tk_every, Prefix, i_pf_p)),
     ("rev", (Tk_rev, Prefix, pOp))
@@ -82,7 +89,8 @@ functions =
                    (T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0))
                  )
         numOp = Sig [C_OneOf[T_Float,T_Int,T_Rational]]
-                $ T_F (T_Pattern $ T_Constraint 0) $ T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0)
+                $ T_F (T_Constraint 0) $ T_F (T_Constraint 0) (T_Constraint 0)
+                -- $ T_F (T_Pattern $ T_Constraint 0) $ T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0)
         sOp = Sig [] $ T_F (T_Pattern $ T_String) (T_Pattern $ T_String)
         pOp = Sig [C_WildCard] $ T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0)
         ppOp = Sig [C_WildCard] $ T_F (T_Pattern $ T_Constraint 0) $ T_F (T_Pattern $ T_Constraint 0) (T_Pattern $ T_Constraint 0)
