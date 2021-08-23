@@ -1,8 +1,8 @@
-module Types where
+module Sound.Tidal2.Types where
 
 import Data.List (intersectBy, nub, (\\), intercalate)
 import Data.Maybe (isJust)
-import NewPattern
+import Sound.Tidal2.Pattern
 
 -- ************************************************************ --
 -- Types of types

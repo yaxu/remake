@@ -3,7 +3,7 @@
 -- (c) Alex McLean 2021
 -- Shared under the terms of the GNU Public License v. 3.0
 
-module NewPattern where
+module Sound.Tidal2.Pattern where
 
 import Data.Ratio
 import Data.Fixed (mod')
@@ -16,12 +16,12 @@ import Prelude hiding ((<*), (*>))
 -- ************************************************************ --
 -- Core definition of a Pattern
 
--- | Timespan (called an arc in 'real' tidal)
+-- | Timespan (called an arc in tidal v1)
 data Span = Span {begin :: Rational, end :: Rational}
   deriving (Show)
 
 -- | An event - a value, its 'whole' timespan, and the timespan that
--- its active (called a 'part' in real tidal)
+-- its active (called a 'part' in tidal v1)
 data Event a = Event {whole :: Maybe Span,
                       active :: Span, value :: a
                      }
@@ -91,6 +91,7 @@ bindWhole :: (Maybe Span -> Maybe Span -> Maybe Span) -> Pattern a -> (a -> Patt
 bindWhole chooseWhole pv f = Pattern $ \s -> concatMap (match s) $ query pv s
   where match s e = map (withWhole e) $ query (f $ value e) (active e)
         withWhole e e' = e' {whole = chooseWhole (whole e) (whole e')}
+
 -- ************************************************************ --
 -- General hacks
 
@@ -249,6 +250,12 @@ squash into pat = splitQueries $ withEventSpan ef $ withQuery qf pat
 
 squashTo :: Rational -> Rational -> Pattern a -> Pattern a
 squashTo b e = late b . squash (e-b)
+
+-- ************************************************************ --
+-- Higher order transformations
+
+--every :: Int -> (Pattern a -> Pattern a) -> Pattern a -> Pattern a
+--every n f pat = splitQueries $ Pattern 
 
 -- ************************************************************ --
 

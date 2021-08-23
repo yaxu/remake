@@ -1,4 +1,4 @@
-module Parse where
+module Sound.Tidal2.Parse where
 
 import Control.Monad (void)
 import Data.Void
@@ -10,8 +10,8 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import Data.Ratio
 import Control.Monad (unless)
 
-import NewPattern hiding ((*>),(<*))
-import Types
+import Sound.Tidal2.Pattern hiding ((*>),(<*))
+import Sound.Tidal2.Types
 
 -- ************************************************************ --
 -- Parser
@@ -112,7 +112,6 @@ pInfix need = do (tok, T_F a (T_F b c)) <- pPeekOp need
                            (Just _, Just _) -> c
                  unless (need == t) $ fail $ "Expected type " ++ show need
                  return $ Tk_Op a' tok b'
-
 
 
 pFn :: Type -> Parser Code
