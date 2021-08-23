@@ -32,7 +32,25 @@ library remake
                       mtl,
                       megaparsec
     hs-source-dirs:   src
+    ghc-options: -Wall
     default-language: Haskell2010
     Exposed-modules: Sound.Tidal2.Pattern
                      Sound.Tidal2.Parse
                      Sound.Tidal2.Types
+test-suite tests
+    type: exitcode-stdio-1.0
+    default-language: Haskell2010
+    main-is: Test.hs
+    hs-source-dirs:
+        test
+    ghc-options: -Wall
+--    other-modules: Sound.Tidal2.PatternTest
+--                   Sound.Tidal2.ParseTest
+--                   Sound.Tidal2.TypesTest
+  build-depends:
+                base ==4.*
+              , hspec
+              , hspec-megaparsec
+              , containers
+              , megaparsec
+              , remake
