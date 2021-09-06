@@ -52,6 +52,40 @@ brackets  = between (symbol "[") (symbol "]")
 comma :: Parser String
 comma = symbol ","
 
+-- ************************************************************ --
+
+pNumber :: Parser Code
+pNumber = lexeme $ do i <- L.signed (return ()) L.decimal
+                      do char '.'
+                         d <- (read . ('0':) . ('.':)) <$> some digit
+                         return $ Tk_Float $ if i >=0 then (fromIntegral i) + d else (fromIntegral i) - d
+                       <|> do char '%'
+                              d <- L.decimal
+                              return $ Tk_Rational $ (fromIntegral i) % (fromIntegral d)
+                       <|> (return $ Tk_Int i)
+     where digit = oneOf ['0'..'9']
+
+pInfix :: Parser Code
+pInfix = do l <- Just <$> pNumber
+                 <|> return Nothing
+            o <- pOp
+            r <- Just <$> pExpr
+                 <|> return Nothing
+            return $ Tk_Op l o r
+
+pExpr = try pInfix
+        <|> pNumber
+
+pOp :: Parser Code
+pOp =
+  Tk_multiply <$ symbol "*"
+  <|> Tk_divide <$ symbol "/"
+  <|> Tk_plus <$ symbol "+"
+  <|> Tk_subtract <$ symbol "-"
+
+{-
+
+
 pSequence :: Parser a -> Parser (Rhythm a)
 pSequence p = Subsequence <$> many (pStep p)
 
@@ -78,6 +112,10 @@ pRhythm p = (symbol "~" >> return Silence)
             <|> angles (StackSteps 1 <$> (pSequence p) `sepBy` comma)
             -- <|> parens
 
+-- ************************************************************ --
+
+
+
 pIdentifier :: Parser String
 pIdentifier = lexeme $ do x <- lowerChar
                           xs <- many $ choice [alphaNumChar,
@@ -92,13 +130,16 @@ pOperator = lexeme $ some (oneOf ("<>?!|-~+*%$'.#" :: [Char]))
 
 pClosed :: Type -> Parser Code
 pClosed need = case need of
-                 T_Int -> Tk_Int <$> signedInteger
+                 T_Int      -> Tk_Int <$> signedInteger
                  T_Rational -> Tk_Rational <$> pRatio
-                 T_String -> Tk_String <$> stringLiteral
-                 T_Bool -> Tk_Bool True <$ symbol "True"
+                 T_String   -> Tk_String <$> stringLiteral
+                 T_Bool     -> Tk_Bool True <$ symbol "True"
                    <|> Tk_Bool False <$ symbol "False"
                  _ -> fail "Not a value"
-               <|> (parens $ pFn need <|> pInfix need <|> pClosed need)
+               <|> parens (pOpen need)
+
+pOpen :: Type -> Parser Code
+pOpen need = pFn need <|> pInfix need <|> pClosed need
 
 pInfix :: Type -> Parser Code
 pInfix need = do (tok, T_F a (T_F b c)) <- pPeekOp need
@@ -171,3 +212,4 @@ pPeekOp need = dbg "pPeekOp" $ try $ lookAhead $
        Nothing -> fail $ "Unknown operator " ++ op
        _ -> fail "Unexpected prefix function.."
              
+-}
