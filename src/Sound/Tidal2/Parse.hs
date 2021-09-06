@@ -76,6 +76,10 @@ pInfix = do l <- Just <$> pNumber
 pExpr = try pInfix
         <|> pNumber
 
+
+pClosed = pNumber
+  <|> parens pExpr
+
 pOp :: Parser Code
 pOp =
   Tk_multiply <$ symbol "*"
