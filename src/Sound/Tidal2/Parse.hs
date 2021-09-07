@@ -52,6 +52,14 @@ brackets  = between (symbol "[") (symbol "]")
 comma :: Parser String
 comma = symbol ","
 
+identifier :: Parser String
+identifier = lexeme $ do x <- lowerChar
+                         xs <- many $ choice [alphaNumChar,
+                                              single '_',
+                                              single '\''
+                                             ]
+                         return $ x:xs
+
 -- ************************************************************ --
 
 pNumber :: Parser Code
@@ -66,19 +74,21 @@ pNumber = lexeme $ do i <- L.signed (return ()) L.decimal
      where digit = oneOf ['0'..'9']
 
 pInfix :: Parser Code
-pInfix = do l <- Just <$> pNumber
+pInfix = do l <- Just <$> pClosed
                  <|> return Nothing
             o <- pOp
-            r <- Just <$> pExpr
+            r <- Just <$> pOpen
                  <|> return Nothing
             return $ Tk_Op l o r
 
-pExpr = try pInfix
-        <|> pNumber
+pClosed :: Parser Code
+pClosed = try pNumber -- use try to avoid consuming + / -
+          <|> pName
+          <|> parens pOpen
+          
 
-
-pClosed = pNumber
-  <|> parens pExpr
+pOpen :: Parser Code
+pOpen = try pInfix <|> pFunc <|> pClosed 
 
 pOp :: Parser Code
 pOp =
@@ -86,6 +96,16 @@ pOp =
   <|> Tk_divide <$ symbol "/"
   <|> Tk_plus <$ symbol "+"
   <|> Tk_subtract <$ symbol "-"
+  <|> Tk_dollar <$ symbol "$"
+
+pName :: Parser Code
+pName = Tk_name <$> identifier
+
+pFunc :: Parser Code
+pFunc = do name <- pName
+           args <- many pClosed
+           return $ foldr Tk_App name args
+
 
 {-
 

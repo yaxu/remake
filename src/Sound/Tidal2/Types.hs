@@ -66,7 +66,8 @@ data Code =
   Tk_rev |
   Tk_hash |
   Tk_dollar |
-  Tk_pure
+  Tk_pure |
+  Tk_name String
   deriving (Show, Eq)
 
 data Fix = Prefix | Infix
