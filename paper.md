@@ -1,5 +1,5 @@
 ---
-title: TidalCycles - alternate timelines
+title: Alternate Timelines for TidalCycles
 author: Alex McLean
 ---
 
@@ -105,16 +105,8 @@ This leads to related possibilities offered up by this - porting tidal outside o
 
 It proved to be fairly straightforward to port the core representation, and applicative and monadic functions to python, and this immediately became a collective effort, with python programmers in the Tidal community jumping in with ideas and core contributions (including Sylvain Le Beux, Damián Silvani and Raphaël Forment). The project is codenamed 'vortex', and around two weeks in, already has a native live coding editor, growing documentation, testing framework, full integration with the Link synchronisation protocol, and of course is able to make sound via the SuperDirt synthesiser in SuperCollider.
 
-I still doubt that it would have been possible to make something quite like Tidal without the support of Haskell's excellent type system, but now it is made, it seems that the ideas and representations are readily transferable to quite different language environments. Nonetheless, there will surely be tradeoffs involved.
+I still doubt that it would have been possible to make something quite like Tidal without the support of Haskell's excellent type system, but now it is made, it seems that the ideas and representations are readily transferable to quite different language environments. Nonetheless, there will surely be different affordances and tradeoffs involved, with different languages 'hosts'.
 
-## Continued work
+## Conclusion
 
-Emerging motivations
-* Straightforward refactoring - text type, clearer definitions
-* Formalising mininotation
-* Weaving mininotation into functional transformation
-* Escaping Haskell syntax
-
-## What if?
-
-* 2d area instead of 1d span
+In summary, this work in rewriting Tidal was driven by curiosity, but lead to unexpected insights and opportunities, in terms of a clearer representation of patterns that opens up new possibilities for experimentation as already partly explored above. What I would especially like to highlight in conclusion is the possibility of opening up some of thinking that goes into creating live coding environments. Perhaps we should think about this quite differently from projecting screens in live coding performance; software development is after all quite a different mode compared to making music, visuals, choreography or other time-based art. Making live coding environments is an opportunity to get very deep in rethinking and restructuring a relationship with time, where following and properly mapping out an idea might take a decade or more. Around 13 years into the development of Tidal I feel I'm only now properly able to grasp what Tidal is, and only starting to be able to properly articulate what it is to others. This 'clean room' rewriting process has helped with this aim, and I encourage other live coding language makers (the dreamers of ways to dream) to try doing something similar.
