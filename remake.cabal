@@ -27,7 +27,7 @@ library remake
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.14.3.0,
+    build-depends:    base,
                       containers,
                       mtl,
                       megaparsec
@@ -48,7 +48,7 @@ test-suite tests
 --                   Sound.Tidal2.ParseTest
 --                   Sound.Tidal2.TypesTest
   build-depends:
-                base ==4.*
+                base
               , hspec
               , hspec-megaparsec
               , containers

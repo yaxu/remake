@@ -55,24 +55,35 @@ instance Show Sig where
               | otherwise = show (constraints s) ++ " => "
 
 data Code =
-  Tk_Int Int | Tk_Rational Rational | Tk_String String | Tk_Float Float | Tk_Bool Bool |
-  Tk_App Code Code |
-  Tk_Op (Maybe Code) Code (Maybe Code) |
-  Tk_every | Tk_fast |
-  Tk_plus |
-  Tk_multiply |
-  Tk_divide |
-  Tk_subtract |
-  Tk_rev |
-  Tk_hash |
-  Tk_dollar |
-  Tk_pure |
-  Tk_name String
+  Cd_Int Int | Cd_Rational Rational | Cd_String String | Cd_Float Float | Cd_Bool Bool |
+  Cd_App Code Code |
+  Cd_Op (Maybe Code) Code (Maybe Code) |
+  Cd_R R |
+  Cd_every | Cd_fast |
+  Cd_plus |
+  Cd_multiply |
+  Cd_divide |
+  Cd_subtract |
+  Cd_rev |
+  Cd_hash |
+  Cd_dollar |
+  Cd_pure |
+  Cd_name String
+  deriving (Show, Eq)
+
+data R = R_Atom String
+       | R_Silence
+       | R_Subsequence [R]
+       | R_StackCycles [R]
+       | R_StackStep   [R]
+       | R_StackSteps  [R]
+       | R_Duration Code R
+       | R_Patterning Code R
   deriving (Show, Eq)
 
 data Fix = Prefix | Infix
 
-functions :: [(String, (Code, Fix, Sig))]
+{-functions :: [(String, (Code, Fix, Sig))]
 functions =
    [("+", (Tk_plus, Infix, numOp)),
     ("*", (Tk_multiply, Infix, numOp)),    
@@ -106,6 +117,7 @@ functions =
         floatToPatMap = Sig [] $ T_F (T_Pattern T_Float) (T_Pattern T_Map)
         number = OneOf [Pattern Float, Pattern Int]
         number = T_Pattern (T_OneOf[T_Float,T_Int])
+-}
 -}
 
 arity :: Type -> Int
