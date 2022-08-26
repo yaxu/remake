@@ -1,9 +1,14 @@
+-- (c) Alex McLean and contributors 2022
+-- Shared under the terms of the GNU Public License v3.0
+
 module Sound.Tidal2.Pattern where
 
 import Data.Ratio
 
 class Functor f => Pattern f where
   slowcat :: [f a] -> f a
+  fastcat :: [f a] -> f a
+  fastcat pats = _fast (toRational $ length pats) $ slowcat pats
   _fast :: Rational -> f a -> f a
   _early :: Rational -> f a -> f a
   silence :: f a
@@ -40,14 +45,14 @@ _slow t = _fast (1/t)
 slow :: Pattern p => p Rational -> p x -> p x
 slow = _patternify _slow
 
-fastcat :: Pattern p => [p x] -> p x
-fastcat pats = _fast (toRational $ length pats) $ slowcat pats
-
 fastappend :: Pattern p => p x -> p x -> p x
 fastappend a b = fastcat [a,b]
 
 slowappend :: Pattern p => p x -> p x -> p x
 slowappend a b = slowcat [a,b]
+
+append :: Pattern p => p x -> p x -> p x
+append = slowappend
 
 early :: Pattern p => p Rational -> p x -> p x
 early = _patternify _early
